@@ -26,6 +26,19 @@ interface UserMessage extends MessageBase {
  */
 interface SessionEventMap {
   /**
+   * Log-only record owned by an external session controller. The host retains
+   * its envelope and refuses agent execution without a reader registered for
+   * every recorded namespace and schema version. The payload is interpreted
+   * only by that reader; it never enters model history by itself.
+   */
+  'extension/record': {
+    namespace: string
+    schemaVersion: number
+    recordId: string
+    kind: string
+    payload: JsonValue
+  }
+  /**
    * Opens turn `turn` before the loop claims queued input or runs pre-step.
    * Rejection, empty input, cancellation, or failure may close it with no
    * step; otherwise the following identified `user/message` event or batch

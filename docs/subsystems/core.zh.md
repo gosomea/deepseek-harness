@@ -587,6 +587,23 @@ Initiator methods provide same-process causal attribution only. Ambient presence
 
 ```ts cordis-catalog
 /**
+ * Register one reader for a namespace of durable extension records. The
+ * calling fiber owns the registration; its removal immediately prevents
+ * execution of sessions that require it.
+ * @param namespace - exact extension record namespace.
+ * @param versions - schema versions this reader can reconstruct.
+ * @returns the effect disposer.
+ */
+registerSessionControlReader(namespace: string, versions: readonly number[]): () => void
+
+/**
+ * Refuse execution of a Session whose required extension reader is absent
+ * or cannot reconstruct one of its recorded schema versions.
+ * @param session - the exact Session about to resume or enter a step.
+ */
+assertSessionControlReaders(session: Session): void
+
+/**
  * Read the Agent that initiated the inherited asynchronous driver chain.
  * Use this optional form for logging, tracing, metrics, or host attribution
  * that also supports agentless calls. When a parent creates a child, setup
@@ -751,6 +768,8 @@ list(): Agent[]
  */
 roots(): Agent[]
 ```
+
+Types: [Session](session.zh.md)
 
 Source: [`packages/core/agent/src/index.ts`](../../packages/core/agent/src/index.ts)
 

@@ -59,6 +59,8 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
     /** Pending agent input reconstructed from durable inbox splices. */
     inbox: InboxState
+    /** External record schema versions required before this Session may execute. */
+    extensionReaders: Record<string, number[]>
   }
   interface SessionProjectionMap {
     /** Pending agent input reconstructed from durable inbox splices. */

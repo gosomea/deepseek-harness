@@ -9318,6 +9318,129 @@
       }
     },
     {
+      "key": "event:extension/record",
+      "kind": "event",
+      "event": "extension/record",
+      "surface": false,
+      "digest": "3ea023247dcfefb2ebe34274305529315a2099dd71c9edee9486ad72548581fa",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 9,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 8,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 8,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 10,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "kind",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "namespace",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "payload",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "recordId",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "schemaVersion",
+                "type": 8,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "union",
+            "types": [
+              2,
+              4,
+              5,
+              6,
+              7,
+              8
+            ]
+          },
+          {
+            "kind": "array",
+            "element": 3
+          },
+          {
+            "kind": "object",
+            "properties": [],
+            "indices": [
+              {
+                "key": 2,
+                "value": 3
+              }
+            ]
+          },
+          {
+            "kind": "primitive",
+            "type": "boolean"
+          },
+          {
+            "kind": "primitive",
+            "type": "null"
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "literal",
+            "value": "extension/record"
+          }
+        ]
+      }
+    },
+    {
       "key": "event:feedback/message-delete",
       "kind": "event",
       "event": "feedback/message-delete",
@@ -25178,6 +25301,20 @@
       ]
     },
     {
+      "digest": "128d09380086ebec14551cc8be242208b00272f72574b787f47d0c6c8303324f",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "literal",
+            "value": "extension/record"
+          }
+        ]
+      },
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "12a0cfa619ac4a5fc6c3e8e359c8dae15769edc61497a575935c78d5842f8e42",
       "schema": {
         "root": 0,
@@ -29391,7 +29528,91 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:427"
+        "packages/core/session/src/types.ts:440"
+      ]
+    },
+    {
+      "digest": "17f273a3793bf4bcebd4c7ca338cef316aeb30ef960d838639213d16fbf670bb",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "kind",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "namespace",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "payload",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "recordId",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "schemaVersion",
+                "type": 7,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "union",
+            "types": [
+              1,
+              3,
+              4,
+              5,
+              6,
+              7
+            ]
+          },
+          {
+            "kind": "array",
+            "element": 2
+          },
+          {
+            "kind": "object",
+            "properties": [],
+            "indices": [
+              {
+                "key": 1,
+                "value": 2
+              }
+            ]
+          },
+          {
+            "kind": "primitive",
+            "type": "boolean"
+          },
+          {
+            "kind": "primitive",
+            "type": "null"
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          }
+        ]
+      },
+      "names": [],
+      "sources": [
+        "packages/core/session/src/types.ts:288"
       ]
     },
     {
@@ -30917,7 +31138,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:341"
+        "packages/core/session/src/types.ts:354"
       ]
     },
     {
@@ -35023,7 +35244,7 @@
         "packages/core/session/src/types.ts#SurfaceOp"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:462"
+        "packages/core/session/src/types.ts:475"
       ]
     },
     {
@@ -36475,6 +36696,127 @@
       "sources": [
         "packages/compaction/compaction/src/types.ts:24"
       ]
+    },
+    {
+      "digest": "3ea023247dcfefb2ebe34274305529315a2099dd71c9edee9486ad72548581fa",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 9,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 8,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 8,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 10,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "kind",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "namespace",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "payload",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "recordId",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "schemaVersion",
+                "type": 8,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "union",
+            "types": [
+              2,
+              4,
+              5,
+              6,
+              7,
+              8
+            ]
+          },
+          {
+            "kind": "array",
+            "element": 3
+          },
+          {
+            "kind": "object",
+            "properties": [],
+            "indices": [
+              {
+                "key": 2,
+                "value": 3
+              }
+            ]
+          },
+          {
+            "kind": "primitive",
+            "type": "boolean"
+          },
+          {
+            "kind": "primitive",
+            "type": "null"
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "literal",
+            "value": "extension/record"
+          }
+        ]
+      },
+      "names": [],
+      "sources": []
     },
     {
       "digest": "3ee93b06f3a125850337602bcdf155d2538c43a5c944ec55b1b3c365152d6796",
@@ -47881,7 +48223,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:311"
+        "packages/core/session/src/types.ts:324"
       ]
     },
     {
@@ -48757,7 +49099,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:375"
+        "packages/core/session/src/types.ts:388"
       ]
     },
     {
@@ -49710,7 +50052,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:355"
+        "packages/core/session/src/types.ts:368"
       ]
     },
     {
@@ -58691,7 +59033,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:330"
+        "packages/core/session/src/types.ts:343"
       ]
     },
     {
@@ -69451,7 +69793,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:383",
+        "packages/core/session/src/types.ts:396",
         "packages/core/tools/src/types.ts:24"
       ]
     },
@@ -70574,7 +70916,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:390"
+        "packages/core/session/src/types.ts:403"
       ]
     },
     {
@@ -73280,7 +73622,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:464"
+        "packages/core/session/src/types.ts:477"
       ]
     },
     {
@@ -81193,7 +81535,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/agent/src/types.ts:96"
+        "packages/core/agent/src/types.ts:98"
       ]
     },
     {
@@ -82854,7 +83196,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:297"
+        "packages/core/session/src/types.ts:310"
       ]
     },
     {
@@ -82905,7 +83247,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:361"
+        "packages/core/session/src/types.ts:374"
       ]
     },
     {
@@ -86682,8 +87024,8 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:299",
-        "packages/core/session/src/types.ts:301"
+        "packages/core/session/src/types.ts:312",
+        "packages/core/session/src/types.ts:314"
       ]
     },
     {
@@ -90406,7 +90748,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:288",
+        "packages/core/session/src/types.ts:301",
         "packages/deliverables/workspace-changes/src/types.ts:106"
       ]
     },

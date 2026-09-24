@@ -11,7 +11,8 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { isPromise } from 'node:util/types'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
-import type { SessionEvent, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session-projection'
 import { installTurnArchiveAdmission } from './archive-admission.ts'
 import type { Agent } from './types.ts'
 import type { AgentOptions, SessionStartSource } from './runtime-types.ts'
@@ -244,6 +245,7 @@ interface FactorySlot {
  */
 export class AgentRegistry extends Service {
   private store = new Map<SessionId, AgentEntry>()
+  private readonly sessionControlReaders = new Map<string, ReadonlySet<number>>()
   private factory: FactorySlot | undefined
   private readonly initiators = new AsyncLocalStorage<Agent | undefined>()
   private readonly initiatorRuns = new AsyncLocalStorage<InitiatorRun>()
@@ -280,6 +282,46 @@ export class AgentRegistry extends Service {
     // Archive admission: the Workspace registry asks what still runs for a
     // Session before hiding it; a running turn answers here, for every Agent.
     installTurnArchiveAdmission(ctx, sessionId => this.get(sessionId))
+  }
+
+  /**
+   * Register one reader for a namespace of durable extension records. The
+   * calling fiber owns the registration; its removal immediately prevents
+   * execution of sessions that require it.
+   * @param namespace - exact extension record namespace.
+   * @param versions - schema versions this reader can reconstruct.
+   * @returns the effect disposer.
+   */
+  registerSessionControlReader(namespace: string, versions: readonly number[]): () => void {
+    if (!namespace.trim() || versions.length === 0
+      || versions.some(version => !Number.isSafeInteger(version) || version < 1)) {
+      throw new TypeError('session control reader requires a namespace and positive schema versions')
+    }
+    return this.ctx.effect(() => {
+      if (this.sessionControlReaders.has(namespace)) {
+        throw new Error(`session control reader "${namespace}" is already registered`)
+      }
+      this.sessionControlReaders.set(namespace, new Set(versions))
+      return () => { this.sessionControlReaders.delete(namespace) }
+    }, `agents.sessionControlReader(${namespace})`)
+  }
+
+  /**
+   * Refuse execution of a Session whose required extension reader is absent
+   * or cannot reconstruct one of its recorded schema versions.
+   * @param session - the exact Session about to resume or enter a step.
+   */
+  assertSessionControlReaders(session: Session): void {
+    const projections = this.ctx.get('sessionProjections')
+    if (projections === undefined) throw new Error('session projections are required for extension admission')
+    const required = projections.stateOf(session, 'extensionReaders')
+    if (required === undefined) throw new Error('extension reader projection is not registered')
+    for (const [namespace, versions] of Object.entries(required)) {
+      const reader = this.sessionControlReaders.get(namespace)
+      if (reader === undefined || versions.some(version => !reader.has(version))) {
+        throw new Error(`session "${session.id}" requires a compatible "${namespace}" extension reader`)
+      }
+    }
   }
 
   /**
