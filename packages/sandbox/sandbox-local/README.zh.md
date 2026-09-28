@@ -146,3 +146,5 @@ Windows 档为每个工作区保留一个确定性写入 SID 和常驻 ACE，同
 [沙箱决策](../../../.agents/notes/implemented/feature/2026-07-06-sandbox.zh.md)把环境一致的能力组示例（例如 bash 加 fs 针对同一个容器）列为延期阶段；该方向尚未决定。
 
 </details>
+
+严格验证策略通过原生 Seatbelt 或 bubblewrap 按次限制读取、写入与网络；不支持的后端直接拒绝，不降级为普通 workspace-write。详见 [sandbox 服务](../sandbox/README.zh.md#strict-verification-calls)。

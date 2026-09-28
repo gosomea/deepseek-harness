@@ -7,6 +7,7 @@
 import { grantArgs as landlockGrantArgs } from '@deepseek-ai/node-addon-system/landlock-run'
 import { writableRoots } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
+import { dirname } from 'node:path'
 
 /**
  * Build the bwrap profile arguments for one file-effect policy.
@@ -14,6 +15,12 @@ import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
  * @returns profile arguments before the trailing separator and command argv.
  */
 export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
+  if (policy.verification) {
+    const args = ['--tmpfs', '/', '--dev', '/dev', '--unshare-pid', '--proc', '/proc', '--unshare-net', '--die-with-parent']
+    for (const root of policy.verification.readRoots) args.push('--ro-bind', root, root)
+    args.push('--bind', policy.workspaceRoot, policy.workspaceRoot, '--remount-ro', '/')
+    return args
+  }
   const args = ['--ro-bind', '/', '/', '--dev', '/dev', '--unshare-pid', '--proc', '/proc', '--die-with-parent']
   if (policy.mode === 'workspace-write') {
     args.push('--tmpfs', '/tmp')
@@ -28,6 +35,7 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
  * @returns launcher grant arguments before the trailing separator and command argv.
  */
 export function landlockProfileArgs(policy: SandboxPolicy): string[] {
+  if (policy.verification) throw new Error('Landlock verification network isolation is unavailable')
   const readWrite = ['/dev/null']
   if (policy.mode === 'workspace-write') {
     readWrite.push('/tmp', policy.workspaceRoot)
@@ -49,6 +57,16 @@ function sbplString(path: string): string {
  * @returns sandbox-exec arguments before the trailing separator and command argv.
  */
 export function seatbeltProfileArgs(policy: SandboxPolicy): string[] {
+  if (policy.verification) {
+    const paths = [...new Set([policy.workspaceRoot, ...policy.verification.readRoots])]
+    // dyld enumerates these directories during startup; literal grants do not expose their descendants.
+    const ancestors = new Set<string>(['/', '/private', '/private/var', '/private/var/db'])
+    for (const path of paths) { let parent = dirname(path); while (!ancestors.has(parent)) { ancestors.add(parent); if (parent === '/') break; parent = dirname(parent) } }
+    const reads = paths.map(sbplString)
+    return ['-p', ['(version 1)', '(allow default)', '(deny network*)', '(deny file-read-data)', '(deny file-read-xattr)', '(deny file-write*)',
+      `(allow file-read-data file-read-xattr ${reads.map(root => `(subpath ${root})`).join(' ')} ${[...ancestors].map(path => `(literal ${sbplString(path)})`).join(' ')} (literal "/dev/null") (literal "/dev/zero") (literal "/dev/random") (literal "/dev/urandom"))`,
+      `(allow file-write* (subpath ${sbplString(policy.workspaceRoot)}) (literal "/dev/null"))`].join(' ')]
+  }
   const forms = ['(version 1)', '(allow default)', '(deny file-write*)', `(allow file-write* (literal ${sbplString('/dev/null')}))`]
   const roots = writableRoots(policy)
   if (roots.length > 0) {

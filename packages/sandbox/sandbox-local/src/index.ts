@@ -319,19 +319,28 @@ export class LocalSandboxProvider extends SandboxProvider {
   async confine(argv: readonly string[], policy: SandboxPolicy, signal?: AbortSignal): Promise<ConfinedArgv> {
     signal?.throwIfAborted()
     policy = { ...policy, workspaceRoot: canonicalPath(policy.workspaceRoot) }
+    if (policy.verification) {
+      if (policy.mode !== 'workspace-write') throw new TypeError('verification requires workspace-write for its private check directory')
+      const readRoots = policy.verification.readRoots.map(canonicalPath)
+      if (readRoots.some(root => root === '/' || !root.startsWith('/'))) throw new TypeError('verification read roots must be absolute restricted paths')
+      policy = { ...policy, verification: { readRoots } }
+    }
     if (this.runnerCommand !== undefined) {
       return Promise.resolve<ConfinedArgv>({
         argv: [...this.runnerCommand, ...bwrapProfileArgs(policy), '--', ...argv],
         enforcement: 'full',
+        ...policy.verification ? { verificationEnforced: true as const } : {},
         denialSignatures: DENIAL_SIGNATURES.runnerCommand,
         runnerFailureRules: [{ fatalSignatures: this.configuredRunnerFailureSignatures }],
       })
     }
     const selected = this.selectRunner(policy.mode)
+    if (policy.verification && selected.runner !== 'bwrap' && selected.runner !== 'seatbelt') throw new SandboxUnavailableError(policy.mode, 'verification requires read and network confinement; this backend does not provide it')
     const runnerArgv = this.runnerArgv(selected.runner, policy)
     return Promise.resolve<ConfinedArgv>({
       argv: [...runnerArgv, '--', ...argv],
       enforcement: selected.enforcement,
+      ...policy.verification ? { verificationEnforced: true as const } : {},
       denialSignatures: DENIAL_SIGNATURES[selected.runner],
       runnerFailureRules: RUNNER_FAILURE_RULES[selected.runner],
     })

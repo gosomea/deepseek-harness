@@ -121,6 +121,10 @@ Start with the subsystem reference for the exhaustive contract, then the backend
 -----
 
 <a id="model-experience"></a>
+## Strict verification calls
+
+A `workspace-write` policy may include `verification: { readRoots }`. This removes ambient temporary write grants, permits content reads only from the private workspace and declared runtime paths, and disables network access. The consumer must require `verificationEnforced: true` and full enforcement before spawning. Local Seatbelt and bubblewrap support it; Landlock and Windows ACL reject it. Runtime paths are trusted deployment input; grant only necessary toolchains, never a user home or another task. Seatbelt permits literal ancestor-directory enumeration for loader startup without granting their descendant files. Existing calls without this field retain their policy.
+
 ## Model Experience
 
 ### Confinement error, indirectly
@@ -164,7 +168,7 @@ Append-only; escalation text follows the retained prefix and does not invalidate
 
 These limits define when the seam is a poor fit or needs special operational care. They are current package constraints, not a general sandbox comparison or a task backlog.
 
-- **File effects are the whole policy vocabulary** — the seam expresses no network, process, syscall, device, or credential restrictions.
+- **Ordinary modes govern file effects** — strict verification additionally restricts reads and disables network access; process, syscall and device isolation remain backend-specific.
 - **Same-world confinement only** — containers, microVMs, and remote execution require replacing capability implementations rather than adding a provider here.
 - **Denial reporting is a stderr dialect** — the seam returns backend signatures instead of a typed runtime denial channel, so consumers that need classification infer it from the child process's output.
 - **Runner diagnostics are in-band** — exit status plus stderr evidence cannot prove which process wrote a matching line, so a confined child that deliberately mimics its runner can cause a false availability or diagnostic attribution; this cannot bypass confinement, and an out-of-band runner-status channel is deferred.

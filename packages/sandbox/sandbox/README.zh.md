@@ -121,6 +121,10 @@ kind: "package-reference"
 -----
 
 <a id="model-experience"></a>
+## 严格验证调用 {#strict-verification-calls}
+
+`workspace-write` 策略可携带 `verification: { readRoots }`。该策略取消公共临时目录写权限，只允许读取私有工作区和明确声明的运行时路径，并禁用网络。调用者在启动前必须确认返回 `verificationEnforced: true` 且完整执行限制。原生 Seatbelt 与 bubblewrap 支持；Landlock 和 Windows ACL 明确拒绝。运行时路径来自可信部署配置，只授予必要工具链，不能包含用户主目录或其他任务。Seatbelt 允许枚举必要的父目录条目以供加载器启动，不因此授权读取其后代文件。未携带该字段的调用保留原有策略。
+
 ## 模型体验
 
 ### 间接的限制错误
@@ -164,7 +168,7 @@ sandbox mode "<mode>" is requested but no sandbox backend is usable on this host
 
 这些限制说明该 seam 何时不合适，或何时需要特别运维。它们是当前包约束，不是通用沙箱对比或任务积压。
 
-- **文件操作是完整的策略词汇**——该 seam 不表达网络、进程、系统调用、设备或凭据限制。
+- **普通模式限制文件操作**——严格验证还限制读取并禁用网络；进程、系统调用与设备隔离仍取决于后端。
 - **只支持与宿主共享文件系统和内核的限制**——容器、microVM 与远程执行需要替换能力实现，而不是在此添加提供方。
 - **拒绝报告是一种 stderr 方言**——该 seam 返回后端签名，而非类型化运行时拒绝通道，需要分类的消费方必须从子进程输出推断。
 - **Runner 诊断使用带内通道**——退出状态与 stderr 证据无法证明匹配行由哪个进程写入，因此故意模仿 runner 的受限子进程可能造成错误的可用性或诊断归因；这无法绕过隔离，带外 runner 状态通道暂缓实现。

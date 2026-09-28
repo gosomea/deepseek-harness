@@ -146,3 +146,5 @@ This Dev Note is working context for maintainers: undecided directions and open 
 The [sandbox decision](../../../.agents/notes/implemented/feature/2026-07-06-sandbox.md) lists an environment-coherent capability group example (for example bash plus fs against one container) as a deferred phase; it is not decided.
 
 </details>
+
+Strict verification policies use the native Seatbelt or bubblewrap profile to restrict reads, writes and network per invocation. Unsupported rungs refuse instead of substituting ordinary workspace-write. See [the sandbox service](../sandbox/README.md#strict-verification-calls).

@@ -90,6 +90,11 @@ interface SandboxPolicyRequest {
 interface SandboxPolicy extends SandboxExecutionPolicy {
   /** The file-effect mode this execution runs under. */
   mode: ConfinedSandboxMode
+  /**
+   * Strict checks remove ambient temp grants and network access. Reads are limited
+   * to the workspace and declared runtime paths. Unsupported backends fail closed.
+   */
+  verification?: { readRoots: readonly string[] }
 }
 ```
 
@@ -126,6 +131,8 @@ interface RunnerFailureRule {
  * achieves for it.
  */
 interface ConfinedArgv {
+  /** True only when the provider enforced the requested verification read, write and network restrictions. */
+  verificationEnforced?: true
   /** The wrapped argv (runner, profile, separator, then the caller's argv). */
   argv: string[]
   /** How completely the selected backend enforces the policy's file effects. */
