@@ -415,6 +415,12 @@ export class AgentRegistry extends Service {
    */
   async create(options: CreateAgentOptions): Promise<AgentHandle> {
     const ownerCtx = this.ctx
+    const retirement = ownerCtx.get('workspaceRegistry')?.retirement
+    using _admission = retirement === undefined ? undefined : await retirement.claim({
+      directory: options.meta?.cwd,
+      sessionId: options.sessionId,
+      parentSessionId: options.parentAgent?.id ?? options.meta?.parentSession,
+    })
     // Re-trace a Service-backed factory through the accessing context
     // explicitly. This preserves AgentLoop's dependency origin while binding
     // its effects to ownerCtx; plain factories receive ownerCtx as an explicit
@@ -422,7 +428,7 @@ export class AgentRegistry extends Service {
     const { target } = this.requireFactory()
     const receiver = getTraceable(ownerCtx, target)
     // oxlint-disable-next-line typescript/unbound-method -- Reflect.apply intentionally supplies the caller-traced receiver
-    return Reflect.apply(target.createAgent, receiver, [ownerCtx, options])
+    return await Reflect.apply(target.createAgent, receiver, [ownerCtx, options])
   }
 
   /**
@@ -434,10 +440,15 @@ export class AgentRegistry extends Service {
    */
   async resume(options: ResumeAgentOptions): Promise<AgentHandle> {
     const ownerCtx = this.ctx
+    const retirement = ownerCtx.get('workspaceRegistry')?.retirement
+    using _admission = retirement === undefined ? undefined : await retirement.claim({
+      sessionId: options.resumeSessionId,
+      parentSessionId: options.parentAgent?.id,
+    })
     const { target } = this.requireFactory()
     const receiver = getTraceable(ownerCtx, target)
     // oxlint-disable-next-line typescript/unbound-method -- Reflect.apply intentionally supplies the caller-traced receiver
-    return Reflect.apply(target.resume, receiver, [ownerCtx, options])
+    return await Reflect.apply(target.resume, receiver, [ownerCtx, options])
   }
 
   /**

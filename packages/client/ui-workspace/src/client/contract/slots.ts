@@ -243,6 +243,7 @@ export type WorkspaceBrowserInjected = {
      */
     hostInfo: HostObservable<RemoteHostFacts>
     workspaceShortcuts: HostObservable<WorkspaceShortcutState>
+    sidebarScopes: HostObservable<readonly import('../sidebar-scope.ts').SidebarWorkspaceScope[]>
     shortcuts: HostObservable<readonly ShortcutCatalogEntry[]>
   }
   /** Open the browser search and focus its input. */

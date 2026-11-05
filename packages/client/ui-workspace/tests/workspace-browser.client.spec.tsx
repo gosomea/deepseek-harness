@@ -112,6 +112,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
   const props: WorkspaceBrowserProps = {
     useShortcuts: select => select([]),
     useWorkspaceShortcuts: bindSnapshotSelector(controls.state),
+    useSidebarScopes: select => select([]),
     requestSearch: controls.search,
     requestAddWorkspace: controls.add,
     closeAddWorkspace: controls.closeAdd,
@@ -154,6 +155,33 @@ function rerender(b: ReturnType<typeof mount>, overrides: Partial<WorkspaceBrows
 }
 
 describe('WorkspaceBrowser', () => {
+  it('scopes Workspace groups, flat Sessions and search results to the active panel', async () => {
+    const panelId = 'example-agent' as MainPanelId
+    const b = mount({
+      useSidebarScopes: hook([{ panelId, ownsSession: row => row.id === sid('agent-session') }]),
+      useSessions: hook(sessionState([summary('agent-session', 1), summary('native-session', 2)])),
+      useWorkspaces: hook(workspaceState([workspace('agent', ['agent-session'], 'Renamed project'),
+        workspace('native', ['native-session'], 'Native project')])),
+      searchSessions: vi.fn(async () => ({ items: [{ sessionId: sid('native-session'), snippet: 'native match' }], hasMore: false })),
+    })
+    expect(screen.getByText('Native project')).toBeTruthy()
+    expect(screen.queryByText('Renamed project')).toBeNull()
+    rerender(b, { usePanelInfo: hook({ activePanelId: panelId }) })
+    expect(screen.getByText('Renamed project')).toBeTruthy()
+    expect(screen.queryByText('Native project')).toBeNull()
+    act(() => { b.store.actions.setGroupBy('flat') })
+    expect(screen.getByText('agent-session')).toBeTruthy()
+    expect(screen.queryByText('native-session')).toBeNull()
+    act(() => { b.controls.search() })
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'session' } })
+    await waitFor(() => { expect(b.props.searchSessions).toHaveBeenCalled() })
+    expect(screen.getByText('agent-session')).toBeTruthy()
+    expect(screen.queryByText('native-session')).toBeNull()
+    rerender(b, { usePanelInfo })
+    expect(screen.getByText('native-session')).toBeTruthy()
+    expect(screen.queryByText('agent-session')).toBeNull()
+  })
+
   it.each(['workspace', 'flat', 'ungrouped'] as const)('keeps %s recency independent of arrival order and saved manual positions', (mode) => {
     localStorage.clear()
     const preferences = createWorkspaceViewStore().create()

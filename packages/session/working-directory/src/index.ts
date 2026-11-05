@@ -13,6 +13,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import type {} from '@deepseek-ai/dsh-workspace'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -87,6 +88,10 @@ export class WorkingDirectoryService extends Service {
       apply: (state, event) => event.type === 'working-directory/change' ? event.data.cwd : state,
       wire: { viewSchema: directorySchema, view: state => state },
     })
+    ctx.on('workspace/session-locations', async next => [
+      ...(ctx.get('sessions')?.list() ?? []).map(session => ({ id: session.id, directory: this.get(session) })),
+      ...await next(),
+    ])
     ctx.systemPrompt.context({
       name: 'working-directory:current',
       order: ctx.systemPrompt.getContextOrder('WORKING_DIRECTORY'),
@@ -146,6 +151,8 @@ export class WorkingDirectoryService extends Service {
       }
       const original = agent.session.header.cwd ?? this.defaultDirectory
       const restored = await this.directory(original, original, control)
+      const retirement = this.ctx.get('workspaceRegistry')?.retirement
+      using _admission = retirement === undefined ? undefined : await retirement.claim({ sessionId: agent.id, directory: restored })
       this.commit(agent, restored, true, control)
       return restored
     })
@@ -164,6 +171,8 @@ export class WorkingDirectoryService extends Service {
     return this.serialize(agent, signal, async (control) => {
       if (path.length === 0) throw new Error('working-directory: cd must not be empty')
       const directory = await this.directory(path, this.get(agent.session), control)
+      const retirement = this.ctx.get('workspaceRegistry')?.retirement
+      using _admission = retirement === undefined ? undefined : await retirement.claim({ sessionId: agent.id, directory })
       this.commit(agent, directory, false, control)
       return directory
     })

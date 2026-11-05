@@ -32,6 +32,9 @@ export class WorkspaceMoveInvalidError extends Error {
  * index backing the `sessionIds` projection, and attach-time header reads.
  */
 export interface WorkspaceEntityHost {
+  /** Hold admission through the membership write. */
+  claim(directory: string, sessionId?: SessionId): Promise<Disposable>
+
   /**
    * Resolve the open `workspaces` table.
    * @returns the table; throws while the registry has not started yet.
@@ -104,10 +107,22 @@ export class WorkspaceEntity implements Workspace {
   }
 
   async setTitle(title: string): Promise<void> {
+    using _admission = await this.host.claim(this.path)
+    await this.setRetiredTitle(title)
+  }
+
+  /** Registry-only title restoration while native operations are fenced. */
+  async setRetiredTitle(title: string): Promise<void> {
     await this.mutate(record => ({ ...record, title }))
   }
 
   async attachSession(sessionId: SessionId): Promise<void> {
+    using _admission = await this.host.claim(this.path, sessionId)
+    await this.attachRetiredSession(sessionId)
+  }
+
+  /** Registry-only attachment during fenced restore. */
+  async attachRetiredSession(sessionId: SessionId): Promise<void> {
     // Validation is skipped when the settled snapshot already accounts the
     // id: the cwd fact was checked when it first attached and both inputs
     // (stored header cwd, workspace path) are immutable. Membership itself is
@@ -173,6 +188,7 @@ export class WorkspaceEntity implements Workspace {
   }
 
   async detachSession(sessionId: SessionId): Promise<void> {
+    using _admission = await this.host.claim(this.path, sessionId)
     await this.mutate(record => record.sessionIds.includes(sessionId)
       ? { ...record, sessionIds: record.sessionIds.filter(id => id !== sessionId) }
       : record)

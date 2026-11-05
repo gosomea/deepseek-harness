@@ -1,6 +1,6 @@
 import type { z } from 'zod'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, relative } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -190,6 +190,92 @@ async function makeDir(name: string): Promise<string> {
 afterEach(async () => {
   for (const dir of tempDirs.splice(0)) await rm(dir, { recursive: true, force: true })
   base = undefined as never
+})
+
+describe('durable workspace retirement', () => {
+  it('preserves a retirement fence across reopening and restores the same archived Session', async () => {
+    const directory = await makeDir('retired')
+    const quarantineParent = await makeDir('quarantine')
+    const quarantineDirectory = join(quarantineParent, 'payload')
+    const alias = join(quarantineParent, 'alias')
+    await symlink(directory, alias, 'dir')
+    const worker = header('retired-worker', directory)
+    const first = await harness({ sessions: [worker] })
+    const workspace = first.registry.list()[0]!
+    await workspace.setTitle('Worker title')
+    const target = { key: 'first-retirement', directory, quarantineDirectory, sessionId: worker.id }
+    await first.registry.retirement.fence(target)
+    await first.registry.retirement.archive(target)
+    await rename(directory, quarantineDirectory)
+    await expect(first.registry.retirement.remove(target, 'wrong-id')).rejects.toThrow(/registration/)
+    await first.registry.retirement.remove(target, workspace.id)
+    await first.ctx.fiber.dispose()
+
+    const reopened = await harness({ sessions: [worker], pool: first.pool })
+    onTestFinished(async () => { await reopened.ctx.fiber.dispose() })
+    const { registry } = reopened
+    await expect(registry.retirement.inspect(target)).resolves.toEqual({ reasons: [], archived: true })
+    await expect(registry.retirement.claim({ directory: join(alias, 'nested') })).rejects.toThrow(/retirement/)
+    await expect(registry.create(quarantineDirectory)).rejects.toThrow(/retirement/)
+    await expect(registry.unarchiveSession(worker.id)).rejects.toThrow(/retirement/)
+    await rename(quarantineDirectory, directory)
+    const result = await registry.retirement.restore(target, { title: workspace.title, unarchive: true })
+    expect(result).toMatchObject({ title: 'Worker title' })
+    expect(result?.id).not.toBe(workspace.id)
+    expect(registry.list()[0]?.sessionIds).toEqual([worker.id])
+    expect(registry.archivedSessionIds).toEqual([])
+    await expect(registry.retirement.claim({ sessionId: worker.id })).rejects.toThrow(/retirement/)
+    await registry.retirement.release(target)
+    await registry.retirement.release(target)
+    await expect(registry.create(directory)).resolves.toMatchObject({ id: result?.id })
+    await expect(registry.retirement.archive(target)).rejects.toThrow(/matching durable/)
+  })
+
+  it('drains an earlier create before checking foreign ownership', async () => {
+    const directory = await makeDir('active-workspace')
+    const quarantineDirectory = join(await makeDir('quarantine'), 'payload')
+    const worker = header('worker', directory)
+    const { registry, ctx, setSessions } = await harness({ sessions: [worker] })
+    onTestFinished(async () => { await ctx.fiber.dispose() })
+    const original = registry.list()[0]!
+    const target = { key: 'create-race', directory, quarantineDirectory, sessionId: worker.id }
+    const prior = await registry.retirement.claim({ directory })
+    try {
+      let finished = false
+      const fencing = registry.retirement.fence(target).then(() => { finished = true })
+      await vi.waitFor(async () => {
+        await expect(original.attachSession(worker.id)).rejects.toThrow(/retirement/)
+      })
+      expect(finished).toBe(false)
+      setSessions([worker, header('foreign-session', directory)])
+      prior[Symbol.dispose]()
+      await fencing
+      const inspection = await registry.retirement.inspect(target)
+      expect(inspection.reasons).toContain('Another Session occupies the directory (foreign-session).')
+      await expect(registry.retirement.archive(target)).rejects.toThrow(/foreign-session/)
+      await expect(registry.retirement.remove(target, original.id)).rejects.toThrow(/foreign-session/)
+      expect(registry.list()).toEqual([original])
+    } finally {
+      prior[Symbol.dispose]()
+    }
+  })
+
+  it('blocks retirement when a Worker or managed descendant still owns activity', async () => {
+    const directory = await makeDir('busy-workspace')
+    const quarantineDirectory = join(await makeDir('quarantine'), 'payload')
+    const worker = header('worker', directory)
+    const child = { ...header('child', directory), origin: 'subagent' as const, parentSession: worker.id }
+    const { registry, ctx } = await harness({ sessions: [worker, child] })
+    onTestFinished(async () => { await ctx.fiber.dispose() })
+    ctx.on('workspace/session-locations', async next => [
+      { id: child.id, directory, activity: 'terminal' },
+      ...await next(),
+    ])
+    const target = { key: 'terminal-check', directory, quarantineDirectory, sessionId: worker.id }
+    await registry.retirement.fence(target)
+    await expect(registry.retirement.archive(target)).rejects.toThrow('Session child is active (terminal).')
+    expect(registry.archivedSessionIds).toEqual([])
+  })
 })
 
 describe('WorkspaceRegistry lifecycle and bootstrap', () => {

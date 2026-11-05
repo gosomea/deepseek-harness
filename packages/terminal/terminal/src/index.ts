@@ -6,6 +6,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-workspace'
 import { TerminalBackendCleanupError } from './types.ts'
 import type {
   TerminalBackend,
@@ -84,6 +85,7 @@ interface SessionRecord {
   readonly owner: Agent
   readonly name: string | undefined
   readonly type: string
+  readonly directory: string | undefined
   readonly session: TerminalBackendSession
   active: TerminalSendOperation | undefined
   closing: Promise<void> | undefined
@@ -91,6 +93,7 @@ interface SessionRecord {
 
 interface PendingSpawn {
   readonly owner: Agent
+  readonly directory: string | undefined
   readonly controller: AbortController
   readonly settled: Promise<void>
   cleanupFailure: { error: unknown } | undefined
@@ -114,6 +117,17 @@ export class TerminalSessionService extends Service {
 
   constructor(ctx: Context) {
     super(ctx, 'terminals')
+    ctx.on('workspace/session-locations', async next => [
+      ...[
+        ...[...this.sessions.values()].filter(record => record.closing !== undefined || record.session.status().kind === 'running'),
+        ...[...this.pendingSpawns.values()].flatMap(pending => [...pending]),
+      ].map(({ owner, directory }) => ({
+        id: owner.id,
+        activity: 'terminal' as const,
+        ...(directory === undefined ? {} : { directory }),
+      })),
+      ...await next(),
+    ])
     ctx.effect(() => () => this.disposeAll(), 'pty teardown')
   }
 
@@ -152,6 +166,8 @@ export class TerminalSessionService extends Service {
    * @returns published identity, metadata, status, and MOTD.
    */
   async spawn(owner: Agent, request: TerminalSpawnRequest, signal?: AbortSignal): Promise<TerminalSpawnResult> {
+    const retirement = this.ctx.get('workspaceRegistry')?.retirement
+    using _admission = retirement === undefined ? undefined : await retirement.claim({ sessionId: owner.id, directory: request.cwd })
     this.assertActive()
     signal?.throwIfAborted()
     this.ensureOwnerCleanup(owner)
@@ -159,7 +175,8 @@ export class TerminalSessionService extends Service {
     if (backend === undefined) throw new TerminalError(`no PTY backend registered for "${request.type}"`, 'NO_BACKEND')
     if (request.name !== undefined && request.name.length === 0) throw new Error('PTY session name must be non-empty')
     const releaseName = this.reserveName(owner, request.name)
-    const spawnReservation = this.reserveSpawn(owner)
+    const directory = request.cwd ?? owner.session.header.cwd
+    const spawnReservation = this.reserveSpawn(owner, directory)
     const backendSignal = signal === undefined
       ? spawnReservation.signal
       : AbortSignal.any([signal, spawnReservation.signal])
@@ -187,6 +204,7 @@ export class TerminalSessionService extends Service {
         owner,
         name: request.name,
         type: request.type,
+        directory,
         session,
         active: undefined,
         closing: undefined,
@@ -347,10 +365,10 @@ export class TerminalSessionService extends Service {
     }
   }
 
-  private reserveSpawn(owner: Agent): SpawnReservation {
+  private reserveSpawn(owner: Agent, directory: string | undefined): SpawnReservation {
     const controller = new AbortController()
     const settlement = Promise.withResolvers<void>()
-    const pending: PendingSpawn = { owner, controller, settled: settlement.promise, cleanupFailure: undefined }
+    const pending: PendingSpawn = { owner, directory, controller, settled: settlement.promise, cleanupFailure: undefined }
     const owned = this.pendingSpawns.get(owner) ?? new Set<PendingSpawn>()
     owned.add(pending)
     this.pendingSpawns.set(owner, owned)
