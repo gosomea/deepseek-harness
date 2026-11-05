@@ -38,6 +38,7 @@ import {
 } from '../tree.ts'
 import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './Rows.tsx'
 import { FLAT_SESSION_ORDER_KEY, type SessionGroupBy } from '../stores.ts'
+import { sidebarProjection } from '../sidebar-scope.ts'
 import { WorkspacePickFlow } from '../WorkspacePicker.tsx'
 import css from './WorkspaceBrowser.module.css'
 
@@ -808,7 +809,7 @@ interface RemoteSearchState {
 
 /** Flat search body: local metadata matches plus the current Host result page. */
 function SearchResults({
-  useSessions,
+  list,
   useSessionStatus,
   open,
   onUnarchive,
@@ -821,7 +822,8 @@ function SearchResults({
   usePanelInfo,
   useSessionAccess,
   t,
-}: Pick<WorkspaceBrowserProps, 'useSessions' | 'useSessionStatus' | 'open' | 't' | 'usePanelInfo' | 'useSessionAccess'> & {
+}: Pick<WorkspaceBrowserProps, 'useSessionStatus' | 'open' | 't' | 'usePanelInfo' | 'useSessionAccess'> & {
+  list: SessionListState
   workspaces: readonly WorkspaceView[]
   archivedSessionIds: readonly SessionNode['id'][]
   /** Search matches follow the archived filter selected for the list. */
@@ -833,7 +835,6 @@ function SearchResults({
   resultLimit: number
 }) {
   const panelActive = usePanelInfo(info => info.activePanelId !== null)
-  const list = useSessions(s => s)
   const statuses = useSessionStatus(s => s)
   const currentRemote = remote.query === query
     ? remote
@@ -933,6 +934,7 @@ export function WorkspaceBrowser({
   useHostInfo,
   useShortcuts,
   useWorkspaceShortcuts,
+  useSidebarScopes,
   requestSearch,
   requestAddWorkspace,
   closeAddWorkspace,
@@ -948,6 +950,8 @@ export function WorkspaceBrowser({
   // Ordering remains live while the rail or search replaces the list body.
   const list = useSessions(state => state)
   const storedWorkspaces = useWorkspaces(state => state.items)
+  const scopes = useSidebarScopes(value => value)
+  const activePanel = usePanelInfo(info => info.activePanelId)
   // The resolved name, not `t`, is the memo dependency: the bound seat keeps
   // its identity across a language switch.
   const defaultWorkspaceName = t('workspace.defaultName')
@@ -958,6 +962,10 @@ export function WorkspaceBrowser({
     })),
     [storedWorkspaces, defaultWorkspaceName],
   )
+  const sidebar = useMemo(() => sidebarProjection(scopes, activePanel, list, workspaces),
+    [scopes, activePanel, list, workspaces])
+  const visibleWorkspaceIds = useMemo(() => new Set(sidebar.workspaces.map(workspace => workspace.workspaceId)),
+    [sidebar.workspaces])
   const workspacePhase = useWorkspaces(state => state.phase)
   const workspaceStreamState = useWorkspaces(state => state.state)
   const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
@@ -1082,7 +1090,15 @@ export function WorkspaceBrowser({
     workspaceReady,
   ])
   const saveSessionOrder = (accountKey: string, order: readonly string[]): void => {
-    actions.setSessionOrder(accountKey, order, activeSessionOrders)
+    const fullOrder = activeSessionOrders[accountKey]
+    if (!scopes.length || !fullOrder || fullOrder.length === order.length) {
+      actions.setSessionOrder(accountKey, order, activeSessionOrders)
+      return
+    }
+    const reordered = new Set(order)
+    let index = 0
+    const merged = fullOrder.map(id => reordered.has(id) ? order[index++] ?? id : id)
+    actions.setSessionOrder(accountKey, merged, activeSessionOrders)
   }
   // The query outlives the tree and the input (both wide-only) so collapsing
   // does not silently drop an in-progress filter.
@@ -1435,11 +1451,11 @@ export function WorkspaceBrowser({
             <SearchResults
               usePanelInfo={usePanelInfo}
               useSessionAccess={useSessionAccess}
-              useSessions={useSessions}
+              list={sidebar.list}
               useSessionStatus={useSessionStatus}
               open={openSearchResult}
               onUnarchive={onSessionUnarchive}
-              workspaces={workspaces}
+              workspaces={sidebar.workspaces}
               archivedSessionIds={archivedSessionIds}
               archivedFilter={archivedFilter}
               query={normalizedQuery}
@@ -1453,8 +1469,8 @@ export function WorkspaceBrowser({
               <FlatList
                 useSessionAccess={useSessionAccess}
                 usePanelInfo={usePanelInfo}
-                list={list}
-                sessionIds={orderedFlatSessionIds}
+                list={sidebar.list}
+                sessionIds={orderedFlatSessionIds.filter(id => sidebar.list.byId[id] !== undefined)}
                 rowState={rowState}
                 onLeaveArchivedOnly={leaveArchivedOnly}
                 workspaceReady={workspaceReady}
@@ -1476,13 +1492,13 @@ export function WorkspaceBrowser({
                 useSessionAccess={useSessionAccess}
                 useWorkspaceAccess={useWorkspaceAccess}
                 usePanelInfo={usePanelInfo}
-                list={list}
+                list={sidebar.list}
                 shortcuts={shortcuts}
                 useSessionStatus={useSessionStatus}
                 onSessionRenameRequest={requestSessionRename}
                 renderSlot={renderSlot}
-                workspaces={orderedWorkspaces}
-                ungroupedSessionIds={orderedUngroupedSessionIds}
+                workspaces={orderedWorkspaces.filter(workspace => visibleWorkspaceIds.has(workspace.workspaceId))}
+                ungroupedSessionIds={orderedUngroupedSessionIds.filter(id => sidebar.list.byId[id] !== undefined)}
                 workspaceReady={workspaceReady}
                 nestWorkspaces={groupBy === 'workspace-tree'}
                 animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}

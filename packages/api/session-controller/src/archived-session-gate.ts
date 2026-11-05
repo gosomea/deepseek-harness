@@ -10,7 +10,7 @@
 import type { Context, Plugin } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-workspace'
+import { WorkspaceRetiredError } from '@deepseek-ai/dsh-workspace'
 
 /**
  * The gate as a plugin for `ctx.plugin(...)`: it loads once the Agent
@@ -24,10 +24,19 @@ export const ArchivedSessionGate: Plugin.Object<void> = {
   name: 'archived-session-gate',
   inject: ['agents', 'sessions', 'workspaceRegistry'],
   apply(ctx: Context): void {
-    ctx.on('agent/pre-step', (payload, next) =>
-      underArchivedSession(ctx, payload.agent)
-        ? Promise.resolve({ kind: 'reject' as const })
-        : next())
+    ctx.on('agent/pre-step', async ({ agent }, next) => {
+      if (underArchivedSession(ctx, agent)) return { kind: 'reject' }
+      try {
+        await ctx.workspaceRegistry.retirement?.assertAdmitted({
+          sessionId: agent.id,
+          directory: agent.session.header.cwd,
+        })
+      } catch (error) {
+        if (error instanceof WorkspaceRetiredError) return { kind: 'reject' }
+        throw error
+      }
+      return next()
+    })
   },
 }
 

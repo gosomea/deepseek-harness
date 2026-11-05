@@ -5,6 +5,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-working-directory'
+import type {} from '@deepseek-ai/dsh-workspace'
 import { Remote, RemoteError, TypertRemoteService, type RemoteStream } from '@deepseek-ai/dsh-typert-protocol'
 import { discoverShells, resolveShell } from './shells.ts'
 import { BrowserTerminal } from './terminal.ts'
@@ -101,6 +102,13 @@ export class TerminalController extends TypertRemoteService {
    */
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'terminalController', { namespace: 'terminal' })
+    ctx.on('workspace/session-locations', async next => [
+      ...[...this.owners].flatMap(([id, owner]) => [
+        ...[...owner.terminals.values()].filter(terminal => terminal.info.state === 'running'),
+        ...owner.allocations.values(),
+      ].map(terminal => ({ id, directory: terminal.info.cwd, activity: 'terminal' as const }))),
+      ...await next(),
+    ])
     ctx.effect(() => async () => {
       this.lifetime.abort(new Error('Terminal controller disposed'))
       const results = await Promise.allSettled([...this.owners].map(([id, owner]) => this.disposeOwner(id, owner)))
@@ -157,6 +165,8 @@ export class TerminalController extends TypertRemoteService {
    */
   @Remote
   async create(agent: Agent, request: TerminalCreateRequest, signal: AbortSignal): Promise<WebTerminalInfo> {
+    const retirement = this.ctx.get('workspaceRegistry')?.retirement
+    using _admission = retirement === undefined ? undefined : await retirement.claim({ sessionId: agent.id })
     this.lifetime.signal.throwIfAborted()
     if (!/^[\w-]{1,128}$/u.test(request.id)) throw new Error('Invalid terminal identity')
     this.dimensions(request.cols, request.rows)
@@ -313,6 +323,8 @@ export class TerminalController extends TypertRemoteService {
   private async spawn(agent: Agent, owner: OwnedSession, request: TerminalCreateRequest, signal: AbortSignal): Promise<BrowserTerminal> {
     const { subprocess, workingDirectory } = this.execution(agent)
     const cwd = await workingDirectory.ensure(agent, signal)
+    const retirement = this.ctx.get('workspaceRegistry')?.retirement
+    using _admission = retirement === undefined ? undefined : await retirement.claim({ sessionId: agent.id, directory: cwd })
     const shell = request.shellPath === undefined
       ? await resolveShell(subprocess, this.config.shell, signal)
       : (await this.shells(agent, signal)).find(candidate => candidate.path === request.shellPath)

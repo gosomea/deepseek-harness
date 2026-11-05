@@ -22,7 +22,7 @@ import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-ses
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
-import type { Workspace } from '@deepseek-ai/dsh-workspace'
+import { WorkspaceRetiredError, type Workspace } from '@deepseek-ai/dsh-workspace'
 import {
   ApiSessionAgentController,
   ApiSessionCwdConflict,
@@ -114,6 +114,7 @@ export class SessionCommandController {
       }
     }
     const cwd = workspace?.path ?? request.cwd ?? this.defaultCwd
+    using _admission = await this.retirementClaim(cwd, request.sessionId)
     let created: ApiSessionCreated
     try {
       created = await this.agents.createSession({
@@ -234,6 +235,7 @@ export class SessionCommandController {
       )
     }
     using source = observed
+    using _admission = await this.retirementClaim(source.header.cwd, request.sessionId)
     const boundary = atSeq ?? latestCompletedPrefixBoundary(source.events)
     if (boundary === undefined || source.events[boundary]?.seq !== boundary) {
       throw new RemoteError(
@@ -302,7 +304,9 @@ export class SessionCommandController {
    * @returns acknowledgement that the Agent accepted the prompt.
    */
   async prompt(request: SessionPromptRequest, source: MessageSource): Promise<SessionPromptValue> {
+    using _retirementAdmission = await this.retirementClaim(undefined, request.sessionId)
     const agent = await this.resolveAgent(request.sessionId)
+    using _locationAdmission = await this.retirementClaim(undefined, request.sessionId)
     if (hasPromptRequest(agent, request.requestId)) return { accepted: true }
     const admission = resolvePromptFileReceipts(
       request.content,
@@ -347,7 +351,16 @@ export class SessionCommandController {
       }
       return { accepted: true }
     }
-    return hasImage ? this.agents.serializeImageAdmission(agent, admit) : admit()
+    return await (hasImage ? this.agents.serializeImageAdmission(agent, admit) : admit())
+  }
+
+  private async retirementClaim(directory?: string, sessionId?: SessionId): Promise<Disposable | undefined> {
+    try {
+      return await this.ctx.get('workspaceRegistry')?.retirement?.claim({ directory, sessionId })
+    } catch (error) {
+      if (error instanceof WorkspaceRetiredError) throw new RemoteError('gateway/bad-request', error.message, {})
+      throw error
+    }
   }
 
   private async requireModel(selection: Pick<AgentModelSelection, 'provider' | 'model'>): Promise<void> {
@@ -383,6 +396,7 @@ export class SessionCommandController {
    * @returns acknowledgement that the queue mutation was applied.
    */
   async updateQueue(request: SessionUpdateQueueRequest): Promise<SessionUpdateQueueValue> {
+    using _admission = await this.retirementClaim(undefined, request.sessionId)
     if (request.action.kind === 'edit') {
       // oxlint-disable-next-line typescript/no-unnecessary-condition -- Remote callers can submit untyped JSON.
       if (request.action.content.some(block => block.type !== 'text')) {

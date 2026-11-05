@@ -254,6 +254,8 @@ export class ScheduleService extends TypertRemoteService {
    * @returns The durably stored schedule. Cancellation does not roll back an in-flight write.
    */
   async create(sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal): Promise<ScheduleRecord> {
+    const retirement = this.ctx.get('workspaceRegistry')?.retirement
+    using _admission = retirement === undefined ? undefined : await retirement.claim({ sessionId })
     if (Number(request.at !== undefined) + Number(request.after_seconds !== undefined)
       + Number(request.every_seconds !== undefined) + Number(request.daily !== undefined)
       + Number(request.weekly !== undefined) + Number(request.cron !== undefined) > 1) {
@@ -276,7 +278,7 @@ export class ScheduleService extends TypertRemoteService {
     else if (request.weekly !== undefined) record = createWeeklyScheduleRecord(id, request.prompt, request.weekly, now, title)
     else if (request.cron !== undefined) record = createCronScheduleRecord(id, request.prompt, request.cron, now, title)
     else throw new ScheduleInputError('invalid_selector', 'Exactly one reminder selector is required.')
-    return this.serialize(async () => {
+    return await this.serialize(async () => {
       const refusal = this.reminderTargetRefusal(sessionId)
       if (refusal !== undefined) throw new ScheduleInputError('subagent_session', refusal.message)
       const domain = await this.getDomain()

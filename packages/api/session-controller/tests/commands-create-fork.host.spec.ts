@@ -1,3 +1,6 @@
+import { mkdtemp, realpath, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -7,8 +10,11 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
-import type { Workspace, WorkspaceId } from '@deepseek-ai/dsh-workspace'
-import { describe, expect, it, vi } from 'vitest'
+import Storage from '@deepseek-ai/dsh-storage'
+import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
+import WorkspaceRegistry, { type Workspace, type WorkspaceId } from '@deepseek-ai/dsh-workspace'
+import { MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import {
   ApiSessionAgentController,
   ApiSessionCwdConflict,
@@ -16,6 +22,7 @@ import {
   type ApiSessionCreateRequest,
 } from '../src/agent.ts'
 import { SessionCommandController } from '../src/commands.ts'
+import type { SessionRequestId } from '../src/types.ts'
 import { installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
 
 async function expectFailure(operation: Promise<unknown>, code: string): Promise<void> {
@@ -57,6 +64,60 @@ async function baseContext(): Promise<Context> {
   } as never)
   return ctx
 }
+
+describe('native Session retirement admission', () => {
+  it('waits for an admitted workspaceId create and denies new cwd creates, forks and prompts', async () => {
+    const directory = await realpath(await mkdtemp(join(tmpdir(), 'dsh-retire-session-')))
+    const ctx = await baseContext()
+    onTestFinished(async () => {
+      await ctx.fiber.dispose()
+      await rm(directory, { recursive: true, force: true })
+    })
+    await ctx.plugin(Storage)
+    ctx.storage.backend.register('memory', new MemoryStorageBackend())
+    const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
+    ctx.storage.mount('domain', facility)
+    ctx.provide('storageDomain', facility)
+    ctx.provide('sessionPersistence', testSessionPersistence(ctx, { list: async () => [], inspect: vi.fn() }) as never)
+    await ctx.plugin(WorkspaceRegistry)
+
+    const { workspaceRegistry } = ctx
+    const workspace = await workspaceRegistry.create(directory)
+    const source = completedSession(ctx, 'worker-session', directory)
+    await workspace.attachSession(source.id)
+    const { promise: created, resolve: finishCreate } = Promise.withResolvers<undefined>()
+    const createSession = vi.fn(async (request: ApiSessionCreateRequest) => {
+      await created
+      return publishedSession(ctx, SessionId('concurrent-session'))(request)
+    })
+    const controller = new SessionCommandController(ctx, controllerAgents(ctx, { createSession }), directory)
+    const pending = controller.create({ workspaceId: workspace.id })
+    const pendingFailure = expectFailure(pending, 'session/workspace-attach-failed')
+    await vi.waitFor(() => expect(createSession).toHaveBeenCalledOnce())
+    const target = { key: 'native-race', directory, quarantineDirectory: directory + '-quarantine', sessionId: source.id }
+    let fenced = false
+    const fencing = workspaceRegistry.retirement.fence(target).then(() => { fenced = true })
+    try {
+      await vi.waitFor(async () => {
+        await expectFailure(controller.fork({ sessionId: source.id }), 'gateway/bad-request')
+      })
+      await expectFailure(controller.create({ cwd: directory }), 'gateway/bad-request')
+      await expectFailure(controller.create({ workspaceId: workspace.id }), 'gateway/bad-request')
+      await expectFailure(controller.prompt({
+        sessionId: source.id,
+        requestId: 'retired-workspace-prompt' as SessionRequestId,
+        mode: 'queue',
+        content: [{ type: 'text', text: 'work' }],
+      }, { kind: 'user' }), 'gateway/bad-request')
+      expect(fenced).toBe(false)
+    } finally {
+      finishCreate(undefined)
+    }
+    await pendingFailure
+    await fencing
+    await expect(workspaceRegistry.retirement.archive(target)).rejects.toThrow('Another Session occupies the directory (concurrent-session).')
+  })
+})
 
 describe('Session creation failures', () => {
   it('creates in the default cwd without a named identity when no explicit target is supplied', async () => {

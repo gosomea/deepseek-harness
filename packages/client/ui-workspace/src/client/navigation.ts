@@ -24,6 +24,7 @@ import type { DraftInitializationOptions } from '@deepseek-ai/dsh-client-ui-conv
 import type { RowToast } from './contract/slots.ts'
 import { pinOrderAccounts, pinOrderSource } from './pin-order.ts'
 import type { WorkspaceViewStoreActions } from './stores.ts'
+import type { SidebarWorkspaceScope } from './sidebar-scope.ts'
 
 interface MainSelection {
   readonly sessionId?: SessionId
@@ -38,6 +39,8 @@ export interface StartSessionOptions extends DraftInitializationOptions {
 
 /** Workspace archive and directory operations consumed by Client UI domains. */
 export interface UiWorkspace {
+  /** Register a main panel's private Workspace and Session view. Returns its disposer. */
+  registerSidebarScope(scope: SidebarWorkspaceScope): () => void
   /**
    * Select a Session and show its Conversation as one UI navigation action.
    * @param target - known Session identity or durable direct-parent subagent address to display.
@@ -164,6 +167,7 @@ export class DirectoryBrowseError extends Error {
 
 /** Implements Workspace archive and directory UI operations. */
 class UiWorkspaceService extends Service implements UiWorkspace {
+  readonly sidebarScopes = createSnapshotStore<readonly SidebarWorkspaceScope[]>([])
   /** The latest in-flight connection per Workspace; a request joins it only when both name the same preset. */
   private readonly connecting = new Map<WorkspaceId, {
     readonly agentPreset: string | undefined
@@ -203,6 +207,11 @@ class UiWorkspaceService extends Service implements UiWorkspace {
         reference?.release()
       }
     }, 'ui-workspace: Workspace navigation policy')
+  }
+
+  registerSidebarScope(scope: SidebarWorkspaceScope): () => void {
+    this.sidebarScopes.set([...this.sidebarScopes.getSnapshot(), scope])
+    return () => { this.sidebarScopes.set(this.sidebarScopes.getSnapshot().filter(entry => entry !== scope)) }
   }
 
   connectWorkspace(workspaceId: WorkspaceId, options: Pick<StartSessionOptions, 'agentPreset'> = {}): Promise<SessionId> {

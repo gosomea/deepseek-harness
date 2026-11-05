@@ -17,6 +17,9 @@ import type { WorkspaceEntityHost } from './entity.ts'
 export { WorkspaceMoveInvalidError } from './entity.ts'
 import { defaultWorkspaceTitle, fullyQualifiedWorkspacePath, realpathNormalize } from './paths.ts'
 import { workspaceDomainSpec } from './spec.ts'
+import { WorkspaceRetirement, workspaceRetirementSpec } from './retirement.ts'
+export { WorkspaceRetiredError } from './retirement.ts'
+export type { WorkspaceRetirementTarget, WorkspaceRetirementInspection } from './retirement.ts'
 import type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
 import type { SessionActivity, Workspace, WorkspaceId as WorkspaceIdBrand } from './types.ts'
 
@@ -99,6 +102,12 @@ export interface SessionActivityRequest {
   readonly sessionId: SessionId
 }
 
+interface WorkspaceSessionLocation {
+  readonly id: SessionId
+  readonly directory?: string
+  readonly activity?: 'terminal'
+}
+
 /** Caller choices for {@link WorkspaceRegistry.archiveSession}. */
 export interface ArchiveSessionOptions {
   /**
@@ -116,6 +125,10 @@ declare module '@deepseek-ai/cordis' {
   }
 
   interface Events {
+    /** Collect effective directories currently held by live Session operations. @mode waterfall */
+    'workspace/session-locations'(
+      next: () => Promise<readonly WorkspaceSessionLocation[]>,
+    ): Promise<readonly WorkspaceSessionLocation[]>
     /**
      * Ask the composed providers what still runs for a session before it is
      * archived. A listener prepends its own {@link SessionActivity} entries to
@@ -180,8 +193,30 @@ export class WorkspaceRegistry extends Service {
   private readonly invalidSessionPaths = new Map<SessionId, string>()
   private operationTail: Promise<void> = Promise.resolve()
 
+  readonly retirement: WorkspaceRetirement = new WorkspaceRetirement({
+    workspaces: () => this.list(),
+    workspaceSessionIds: id => this.requireTable().get(WorkspaceId(id))?.sessionIds ?? [],
+    headers: async () => [
+      ...await this.listStoredHeaders(),
+      ...(this.ctx.get('sessions')?.list() ?? []).map(session => session.header),
+    ],
+    header: id => this.retirementHeader(id as SessionId),
+    activity: async (id) => {
+      const activity = await this.ctx.waterfall(
+        'workspace/session-activity', { sessionId: id }, () => Promise.resolve([]),
+      )
+      return activity.map(entry => `Session ${id} is active (${entry.kind}).`)
+    },
+    liveLocations: () => this.ctx.waterfall('workspace/session-locations', () => Promise.resolve([])),
+    archived: id => this.archivedSessionIds.includes(id as SessionId),
+    archive: id => this.archiveKnown(id, {}),
+    remove: async (id) => { await this.enqueueOperation(() => this.deleteKnown(WorkspaceId(id))) },
+    restore: (path, title, sessionId, unarchive) => this.restoreWorkspace(path, title, sessionId, unarchive),
+  })
+
   private readonly host: WorkspaceEntityHost = {
     table: () => this.requireTable(),
+    claim: (directory, sessionId) => this.retirement.claim({ directory, sessionId }),
     candidateMatches: (id, path) => this.sessionPaths.get(id) === path || this.missingSessionPaths.has(id),
     readSessionHeader: id => this.readSessionHeader(id),
     rememberSessionPath: (id, path) => {
@@ -197,6 +232,9 @@ export class WorkspaceRegistry extends Service {
 
   /** Open the domain, finish bootstrap when required, and rebuild the ordered cache. */
   protected async [Service.init](): Promise<void> {
+    const retirementDomain = await this.ctx.storageDomain.open(workspaceRetirementSpec)
+    this.ctx.effect(() => () => retirementDomain.close(), 'workspace.retirementClose')
+    this.retirement.initialize(retirementDomain.table('fences'))
     const domain = await this.ctx.storageDomain.open(workspaceDomainSpec)
     this.ctx.effect(() => () => domain.close(), 'workspace.domainClose')
     this.table = domain.table('workspaces')
@@ -236,6 +274,11 @@ export class WorkspaceRegistry extends Service {
   // drop the parameter with its @param clause and the `create(path, title?)`
   // lines in this package's README pair.
   async create(path: string, title?: string): Promise<Workspace> {
+    using _admission = await this.retirement.claim({ directory: path })
+    return await this.registerPath(path, title)
+  }
+
+  private async registerPath(path: string, title?: string): Promise<WorkspaceEntity> {
     const canonical = await realpathNormalize(path)
     if (!(await stat(canonical)).isDirectory()) {
       throw new Error(`cannot create a workspace at '${canonical}': path is not a directory`)
@@ -265,6 +308,7 @@ export class WorkspaceRegistry extends Service {
         || sessions.list().length > 0 || (await this.listStoredHeaders()).length > 0) return undefined
 
       const path = await resolveDirectory()
+      using _admission = await this.retirement.claim({ directory: path })
       if (!fullyQualifiedWorkspacePath(path)) throw new TypeError(`Workspace path is not fully qualified: '${path}'`)
       await mkdir(path, { recursive: true })
       const canonical = await realpathNormalize(path)
@@ -307,8 +351,10 @@ export class WorkspaceRegistry extends Service {
    * @param id - Workspace registration to remove.
    * @returns `true` when a record was deleted, `false` when it was unknown.
    */
-  delete(id: WorkspaceId): Promise<boolean> {
-    return this.enqueueOperation(() => this.deleteKnown(id))
+  async delete(id: WorkspaceId): Promise<boolean> {
+    const workspace = this.entities.get(id)
+    using _admission = await this.retirement.claim({ directory: workspace?.path })
+    return await this.enqueueOperation(() => this.deleteKnown(id))
   }
 
   /**
@@ -362,7 +408,12 @@ export class WorkspaceRegistry extends Service {
    * @param options - Whether running work is stopped instead of refusing.
    * @returns resolution after durability and, with `stopActivity`, after every stop request was issued.
    */
-  archiveSession(sessionId: SessionId, options: ArchiveSessionOptions = {}): Promise<void> {
+  async archiveSession(sessionId: SessionId, options: ArchiveSessionOptions = {}): Promise<void> {
+    using _admission = await this.retirement.claim({ sessionId })
+    return await this.archiveKnown(sessionId, options)
+  }
+
+  private archiveKnown(sessionId: SessionId, options: ArchiveSessionOptions): Promise<void> {
     return this.enqueueOperation(async () => {
       // The chain slot serializes against every other registry write, so this
       // check-then-write pair cannot interleave with another archive.
@@ -396,7 +447,12 @@ export class WorkspaceRegistry extends Service {
    * @param sessionId - The session to unarchive.
    * @returns resolution after durability.
    */
-  unarchiveSession(sessionId: SessionId): Promise<void> {
+  async unarchiveSession(sessionId: SessionId): Promise<void> {
+    using _admission = await this.retirement.claim({ sessionId })
+    return await this.unarchiveKnown(sessionId)
+  }
+
+  private unarchiveKnown(sessionId: SessionId): Promise<void> {
     return this.enqueueOperation(async () => {
       // The chain slot serializes against every other registry write, so this
       // check-then-write pair cannot interleave with a concurrent archive.
@@ -505,6 +561,24 @@ export class WorkspaceRegistry extends Service {
       if (entity.path === canonical) return entity
     }
     return undefined
+  }
+
+  private async retirementHeader(id: SessionId): Promise<SessionHeader | undefined> {
+    return this.ctx.get('sessions')?.get(id)?.header ?? this.headers.get(id)
+      ?? (await this.ctx.sessionPersistence.stat(id))?.header
+  }
+
+  private async restoreWorkspace(
+    path: string, title?: string, sessionId?: SessionId, unarchive?: boolean,
+  ): Promise<Workspace> {
+    if (await realpathNormalize(path) !== path) throw new Error('Restored workspace directory is no longer canonical.')
+    const workspace = await this.registerPath(path, title)
+    if (title !== undefined && workspace.title !== title) await workspace.setRetiredTitle(title)
+    if (sessionId !== undefined) {
+      await workspace.attachRetiredSession(sessionId)
+      if (unarchive === true) await this.unarchiveKnown(sessionId)
+    }
+    return workspace
   }
 
   private async createCanonical(canonical: string, title?: string, firstUse = false): Promise<WorkspaceEntity> {
