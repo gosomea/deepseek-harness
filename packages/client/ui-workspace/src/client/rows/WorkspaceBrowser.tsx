@@ -935,6 +935,8 @@ export function WorkspaceBrowser({
   useShortcuts,
   useWorkspaceShortcuts,
   useSidebarScopes,
+  useSidebarSelection,
+  selectSidebarScope,
   requestSearch,
   requestAddWorkspace,
   closeAddWorkspace,
@@ -951,7 +953,10 @@ export function WorkspaceBrowser({
   const list = useSessions(state => state)
   const storedWorkspaces = useWorkspaces(state => state.items)
   const scopes = useSidebarScopes(value => value)
-  const activePanel = usePanelInfo(info => info.activePanelId)
+  // Sticky scope, not the center's active panel: opening a Session reveals the
+  // Conversation (clearing that panel) and must not yank this list back to the
+  // native view mid-scope.
+  const sidebarSelection = useSidebarSelection(value => value)
   // The resolved name, not `t`, is the memo dependency: the bound seat keeps
   // its identity across a language switch.
   const defaultWorkspaceName = t('workspace.defaultName')
@@ -962,8 +967,8 @@ export function WorkspaceBrowser({
     })),
     [storedWorkspaces, defaultWorkspaceName],
   )
-  const sidebar = useMemo(() => sidebarProjection(scopes, activePanel, list, workspaces),
-    [scopes, activePanel, list, workspaces])
+  const sidebar = useMemo(() => sidebarProjection(scopes, sidebarSelection, list, workspaces),
+    [scopes, sidebarSelection, list, workspaces])
   const visibleWorkspaceIds = useMemo(() => new Set(sidebar.workspaces.map(workspace => workspace.workspaceId)),
     [sidebar.workspaces])
   const workspacePhase = useWorkspaces(state => state.phase)
@@ -1316,6 +1321,20 @@ export function WorkspaceBrowser({
           <span className={clsx(css.sectionLabel, css.wide, searchExpanded && css.sectionLabelHidden)}>
             {groupBy === 'flat' ? t('section.sessions') : t('section.workspaces')}
           </span>
+        )}
+        {/* A panel's scope is sticky: it stays put while its Sessions open. This
+            is the explicit way back to every Workspace and Session. */}
+        {wide && sidebarSelection !== null && !searchExpanded && (
+          <Tooltip label={t('sidebarScope.allSessions')} side="bottom" delayMs={500}>
+            <button
+              type="button"
+              className={clsx(css.scopeExit, css.wide)}
+              aria-label={t('sidebarScope.allSessions')}
+              onClick={() => { selectSidebarScope(null) }}
+            >
+              <IconFlatListOutlineRegular />
+            </button>
+          </Tooltip>
         )}
         {wide && (
           <div className={clsx(css.searchSlot, searchExpanded && css.searchSlotExpanded)}>

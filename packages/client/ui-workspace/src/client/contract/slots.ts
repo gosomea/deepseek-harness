@@ -244,6 +244,12 @@ export type WorkspaceBrowserInjected = {
     hostInfo: HostObservable<RemoteHostFacts>
     workspaceShortcuts: HostObservable<WorkspaceShortcutState>
     sidebarScopes: HostObservable<readonly import('../sidebar-scope.ts').SidebarWorkspaceScope[]>
+    /**
+     * The panel whose Session ownership the list shows. Held apart from the
+     * center's active panel: revealing a Conversation clears that panel without
+     * leaving the scope, so the list does not jump back to the native view.
+     */
+    sidebarSelection: HostObservable<import('@deepseek-ai/dsh-client-ui-layout/client').MainPanelId | null>
     shortcuts: HostObservable<readonly ShortcutCatalogEntry[]>
   }
   /** Open the browser search and focus its input. */
@@ -262,6 +268,11 @@ export type WorkspaceBrowserInjected = {
   startSession: (workspaceId?: WorkspaceId, options?: StartSessionOptions) => void
   /** Open a real Session. */
   open: (sessionId: SessionId) => void
+  /**
+   * Show one panel's Session ownership in this list, or the native list for null.
+   * The browser offers this as the way back out of a panel's scope.
+   */
+  selectSidebarScope: (panelId: import('@deepseek-ai/dsh-client-ui-layout/client').MainPanelId | null) => void
   /**
    * Search current visible conversation messages. The Host fixes the result
    * bound; `hasMore` means the query needs narrowing.

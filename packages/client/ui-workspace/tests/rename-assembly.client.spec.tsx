@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
 /**
  * The session-rename assembly chain on SlotTestRuntime (real apply, real
  * WorkspaceBrowser occupying the sidebar hole, the shipped row actions and
@@ -38,7 +39,8 @@ beforeEach(() => { localStorage.clear() })
 async function createRuntime(): Promise<SlotTestRuntime> {
   const runtime = await SlotTestRuntime.create()
   runtime.ctx.provide('shortcuts', { register: () => () => {}, catalog: createSnapshotStore([]) })
-  runtime.ctx.provide('layout', { selectPanel: vi.fn(), beginNavigation: () => new AbortController().signal })
+  const panelInfo = createSnapshotStore<PanelInfo>({ activePanelId: null })
+  runtime.ctx.provide('layout', { selectPanel: vi.fn(), panelInfo, beginNavigation: () => new AbortController().signal })
   runtime.releaseWorkspaceSource()
   // The rename flow never picks a directory; the namespace only has to be there
   // for ui-workspace's inject to settle.

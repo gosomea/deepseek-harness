@@ -283,7 +283,8 @@ export function apply(ctx: Context): void {
     closeAddWorkspace: shortcutControls.closeAdd,
     setDirectoryBusy: shortcutControls.directoryBusy,
     hooks: { directoryFlow: browserFlowSource, hostInfo, workspaceShortcuts: shortcutControls.state, shortcuts: ctx.shortcuts.catalog,
-      sidebarScopes: uiWorkspace.sidebarScopes },
+      sidebarScopes: uiWorkspace.sidebarScopes, sidebarSelection: uiWorkspace.sidebarSelection },
+    selectSidebarScope: (panelId) => { uiWorkspace.selectSidebarScope(panelId) },
   })
   const pickerInjected = (): WorkspacePickerInjected => ({
     createWorkspace: input => workspaces.create(input),

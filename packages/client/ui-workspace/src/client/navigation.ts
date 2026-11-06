@@ -19,7 +19,7 @@ import type {
   IWorkspaces, WorkspaceId, WorkspaceSnapshot, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { DraftInitializationOptions } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { RowToast } from './contract/slots.ts'
 import { pinOrderAccounts, pinOrderSource } from './pin-order.ts'
@@ -41,6 +41,12 @@ export interface StartSessionOptions extends DraftInitializationOptions {
 export interface UiWorkspace {
   /** Register a main panel's private Workspace and Session view. Returns its disposer. */
   registerSidebarScope(scope: SidebarWorkspaceScope): () => void
+  /**
+   * Show one panel's Session ownership in the sidebar; null restores the native list.
+   * Independent of the center's active panel, which a reached Conversation clears.
+   * @param panelId - a registered scope's panel id, or null for the native list.
+   */
+  selectSidebarScope(panelId: MainPanelId | null): void
   /**
    * Select a Session and show its Conversation as one UI navigation action.
    * @param target - known Session identity or durable direct-parent subagent address to display.
@@ -168,6 +174,12 @@ export class DirectoryBrowseError extends Error {
 /** Implements Workspace archive and directory UI operations. */
 class UiWorkspaceService extends Service implements UiWorkspace {
   readonly sidebarScopes = createSnapshotStore<readonly SidebarWorkspaceScope[]>([])
+  /**
+   * The panel whose Session ownership the sidebar shows. Held apart from the
+   * center's active panel, so revealing a Conversation (which clears that panel)
+   * does not also drop the list back to the native Workspace view.
+   */
+  readonly sidebarSelection = createSnapshotStore<MainPanelId | null>(null)
   /** The latest in-flight connection per Workspace; a request joins it only when both name the same preset. */
   private readonly connecting = new Map<WorkspaceId, {
     readonly agentPreset: string | undefined
@@ -207,6 +219,20 @@ class UiWorkspaceService extends Service implements UiWorkspace {
         reference?.release()
       }
     }, 'ui-workspace: Workspace navigation policy')
+    // Choosing a panel selects its scope; revealing a Conversation leaves the
+    // scope where it was, so the list stays put while the center changes.
+    ctx.effect(() => {
+      const panelInfo = ctx.layout.panelInfo
+      return panelInfo.subscribe(() => {
+        const { activePanelId } = panelInfo.getSnapshot()
+        if (activePanelId !== null) this.sidebarSelection.set(activePanelId)
+      })
+    }, 'ui-workspace: sidebar scope selection')
+  }
+
+  /** Show one panel's Session ownership in the sidebar, or the native list for null. */
+  selectSidebarScope(panelId: MainPanelId | null): void {
+    this.sidebarSelection.set(panelId)
   }
 
   registerSidebarScope(scope: SidebarWorkspaceScope): () => void {
