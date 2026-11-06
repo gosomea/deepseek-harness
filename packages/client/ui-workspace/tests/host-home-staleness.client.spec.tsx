@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
 /**
  * Host home reaches the browsing region through the assembled renderer, which
  * memoizes a root entry's inject result for the whole registration — so a home
@@ -31,7 +32,8 @@ async function bench() {
   const runtime = await SlotTestRuntime.create()
   runtime.ctx.provide('shortcuts', { register: () => () => {}, catalog: createSnapshotStore([]) })
   runtime.ctx.provide('uiConversation', {})
-  runtime.ctx.provide('layout', { selectPanel: vi.fn(), beginNavigation: () => new AbortController().signal })
+  const panelInfo = createSnapshotStore<PanelInfo>({ activePanelId: null })
+  runtime.ctx.provide('layout', { selectPanel: vi.fn(), panelInfo, beginNavigation: () => new AbortController().signal })
   runtime.releaseWorkspaceSource()
   const directoryPicker = {}
   const { remote } = runtime

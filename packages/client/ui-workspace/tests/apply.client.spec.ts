@@ -1,4 +1,5 @@
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type {
@@ -80,7 +81,8 @@ async function bench(access: 'fake' | 'static' = 'fake') {
   }))
   const rename = vi.fn(async () => ({}))
   const selectPanel = vi.fn()
-  ctx.provide('layout', { selectPanel, beginNavigation: () => new AbortController().signal })
+  const panelInfo = createSnapshotStore<PanelInfo>({ activePanelId: null })
+  ctx.provide('layout', { selectPanel, panelInfo, beginNavigation: () => new AbortController().signal })
   const search = vi.fn(async () => ({
     ok: true as const,
     value: { items: [{ sessionId: 'session' as never, snippet: 'match' }], hasMore: false },

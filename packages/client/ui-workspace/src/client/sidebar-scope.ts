@@ -10,11 +10,16 @@ export interface SidebarWorkspaceScope {
   readonly ownsSession: (session: SessionSummary) => boolean
 }
 
-/** Partition the sidebar without altering the Session catalog or persisted order. */
-export function sidebarProjection(scopes: readonly SidebarWorkspaceScope[], panelId: MainPanelId | null,
+/**
+ * Partition the sidebar without altering the Session catalog or persisted order.
+ * @param selectedPanel - the scope the browser is showing, held apart from the center's
+ * active panel: opening a Session reveals the Conversation (null) without leaving the scope.
+ * Null shows the native Workspace and Session list, including anything no scope claims.
+ */
+export function sidebarProjection(scopes: readonly SidebarWorkspaceScope[], selectedPanel: MainPanelId | null,
   list: SessionListState, workspaces: readonly WorkspaceView[]) {
   if (!scopes.length) return { list, workspaces }
-  const selected = scopes.find(scope => scope.panelId === panelId)
+  const selected = scopes.find(scope => scope.panelId === selectedPanel)
   const sessionOwners = new Map<SessionId, SidebarWorkspaceScope>()
   const pathOwners = new Map<string, SidebarWorkspaceScope>()
   for (const session of Object.values(list.byId)) {

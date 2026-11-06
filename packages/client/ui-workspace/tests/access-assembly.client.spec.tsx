@@ -14,6 +14,7 @@ import { ClientAccessState } from '@deepseek-ai/dsh-api-remote-access/src/client
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { allowAllAccessPlugin, SlotTestRuntime, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
@@ -52,7 +53,8 @@ async function bench(access: ClientAccessState, options: { ungroupedSession?: Se
   }).await()
   runtime.ctx.provide('shortcuts', { register: () => () => {}, catalog: createSnapshotStore([]) })
   runtime.ctx.provide('uiConversation', {})
-  runtime.ctx.provide('layout', { selectPanel: vi.fn(), beginNavigation: () => new AbortController().signal })
+  const panelInfo = createSnapshotStore<PanelInfo>({ activePanelId: null })
+  runtime.ctx.provide('layout', { selectPanel: vi.fn(), panelInfo, beginNavigation: () => new AbortController().signal })
   runtime.releaseWorkspaceSource()
   runtime.remote.provideNamespaces({ directoryPicker: {} })
   const locale = new LocaleRuntime(runtime.ctx)

@@ -15,7 +15,7 @@ import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LayoutController } from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { MainPanelId, PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { DraftInitializationOptions, SessionInputResolver } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { RowToast } from '../src/client/contract/slots.ts'
@@ -287,11 +287,12 @@ function bench(options: BenchOptions = {}) {
   ctx.provide('locale', locale)
   const requestDraftInitialization = vi.fn<SessionInputResolver['requestDraftInitialization']>(() => 'applied')
   if (options.conversation !== false) ctx.provide('conversation', { input: { requestDraftInitialization } })
+  const panelInfo = createSnapshotStore<PanelInfo>({ activePanelId: null })
   const layout = new LayoutController({
     selectPanel: vi.fn(), retainMainPanels: vi.fn(),
     setSidebar: vi.fn(), toggleSidebar: vi.fn(), setViewportWidth: vi.fn(),
     setRightbar: vi.fn(), openRightbar: vi.fn(), closeRightbar: vi.fn(),
-  }, () => true, createSnapshotStore({ activePanelId: null }))
+  }, () => true, panelInfo)
   const selectPanel = vi.spyOn(layout, 'selectPanel')
   ctx.provide('layout', layout)
   ctx.effect(() => () => { layout.dispose() })
@@ -310,7 +311,8 @@ function bench(options: BenchOptions = {}) {
     view.actions,
     notify,
   )
-  return { ctx, directoryPicker, sessions, uiWorkspace, workspaces, layout, selectPanel, view, notify, requestDraftInitialization }
+  return { ctx, directoryPicker, sessions, uiWorkspace, workspaces, layout, selectPanel, view, notify, requestDraftInitialization,
+    panelInfo }
 }
 
 function lastOpening(open: MockInstance<UiWorkspaceService['openWorkspace']>): Promise<void> {
@@ -1566,5 +1568,23 @@ describe('UiWorkspaceService', () => {
     await expect(b.uiWorkspace.createDirectory('/home/u', 'new')).rejects.toMatchObject({
       rpcError: { code: 'directory-picker/exists' },
     })
+  })
+
+  it('keeps a panel scope while its Session opens, and restores the native list only on request', async () => {
+    const b = bench()
+    const panelId = 'example-agent' as MainPanelId
+    expect(b.uiWorkspace.sidebarSelection.getSnapshot()).toBeNull()
+    // Choosing a panel selects its scope.
+    b.panelInfo.set({ activePanelId: panelId })
+    expect(b.uiWorkspace.sidebarSelection.getSnapshot()).toBe(panelId)
+    // Revealing a Conversation clears the center panel, not the list scope.
+    b.panelInfo.set({ activePanelId: null })
+    expect(b.uiWorkspace.sidebarSelection.getSnapshot()).toBe(panelId)
+    // The explicit way back.
+    b.uiWorkspace.selectSidebarScope(null)
+    expect(b.uiWorkspace.sidebarSelection.getSnapshot()).toBeNull()
+    // A later panel still selects its own scope.
+    b.panelInfo.set({ activePanelId: 'plugins' as MainPanelId })
+    expect(b.uiWorkspace.sidebarSelection.getSnapshot()).toBe('plugins')
   })
 })
